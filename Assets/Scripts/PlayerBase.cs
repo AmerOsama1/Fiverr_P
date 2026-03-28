@@ -5,18 +5,17 @@ public class PlayerBase : MonoBehaviour
 {
     public List<CardData> cards = new List<CardData>();
     public bool isBot;
-public Image turnTimerImage;
-    public RectTransform playerHandUI; // للاعب الحقيقي
-    public Transform botHandPoint;     // للبوت
+    public Image turnTimerImage;
+    public RectTransform playerHandUI; 
+    public Transform botHandPoint;    
 
     public CardView GetCardView(CardData data)
 {
     foreach (CardView card in GetComponentsInChildren<CardView>())
     {
         if (card.cardData == data)
-            return card;
+        return card;
     }
-
     return null;
 }
 }

@@ -12,19 +12,18 @@ public class LoadingScreen : MonoBehaviour
         StartCoroutine(LoadingRoutine());
     }
 
+
     IEnumerator LoadingRoutine()
     {
         float timer = 0f;
-
         while (timer < loadingTime)
         {
             timer += Time.deltaTime;
             loadingImage.fillAmount = timer / loadingTime;
             yield return null;
         }
-
         loadingImage.fillAmount = 1f;
-
-         SceneManager.LoadScene("MainMenu");
+        SceneManager.LoadScene("MainMenu");
     }
+    
 }

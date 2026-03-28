@@ -2,13 +2,11 @@ using UnityEngine;
 
 [CreateAssetMenu(fileName = "CardData", menuName = "Scriptable Objects/CardData")]
 public class CardData : ScriptableObject
-{
-    
-public CardColor color;
-public CardColor secondColor;
-
-public CardType type ;
-public int Number;
+{   
+ public CardColor color;
+ public CardColor secondColor;
+ public CardType type ;
+ public int Number;
  public Sprite cardSprite;
 }
 

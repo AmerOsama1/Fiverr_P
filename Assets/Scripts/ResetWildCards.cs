@@ -3,12 +3,13 @@ using UnityEngine;
 public class ResetWildCards : MonoBehaviour
 {
     public  CardData[] CardRB;
-        public  CardData[] CardYG;
+    public  CardData[] CardYG;
+
 
     void Start()
     {
         CardData[] cards = Resources.LoadAll<CardData>("Cards");
-reset();
+        reset();
         foreach (CardData card in cards)
         {
             if (card.type == CardType.Wild || card.type == CardType.WildDraw4)
@@ -17,19 +18,19 @@ reset();
             }
         }
     }
+
     public void  reset()
     {
         foreach (var card in CardYG)
         {
                  card.color =CardColor.yellow;
-       card.secondColor =CardColor.green;
+                 card.secondColor =CardColor.green;
         }
-      
- foreach (var card in CardRB)
+        foreach (var card in CardRB)
         {
                  card.color =CardColor.blue;
-       card.secondColor =CardColor.red;
+                 card.secondColor =CardColor.red;
         }
-     
     }
+
 }

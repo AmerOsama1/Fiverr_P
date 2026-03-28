@@ -23,23 +23,21 @@ public class BotIntializer : MonoBehaviour
            timer[i].SetActive(true);
        }
         
-
         TurnManager.instance.players.Clear();
 
 foreach (PlayerBase p in botPlayers)
 {
     if (p.gameObject.activeSelf)
-        TurnManager.instance.players.Add(p);
+     TurnManager.instance.players.Add(p);
 }
- 
       DeckManager.instance.players.Clear();
-
+      
 foreach (PlayerBase p in botPlayers )
 {
     if (p.gameObject.activeSelf){
         DeckManager.instance.players.Add(p);}
 
 }
-DeckManager.instance.res();
+     DeckManager.instance.res();
     }
 }

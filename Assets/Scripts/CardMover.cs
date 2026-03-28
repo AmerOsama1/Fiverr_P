@@ -6,7 +6,6 @@ public class CardMover : MonoBehaviour
     public void MoveToUI(RectTransform target)
     {
         RectTransform rect = GetComponent<RectTransform>();
-
         rect.DOAnchorPos(target.anchoredPosition, 0.4f)
         .SetEase(Ease.OutBack);
     }

@@ -7,7 +7,6 @@ public class BotSettings : MonoBehaviour
     {
         PlayerPrefs.SetInt("BotCount", count);
         PlayerPrefs.Save();
-
-        Debug.Log("Saved Bot Count: " + count);
+       // Debug.Log("Saved Bot Count: " + count);
     }
 }

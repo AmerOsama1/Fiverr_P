@@ -4,9 +4,7 @@ using System.Collections;
 
 public class DeckManager : MonoBehaviour
 {
-    SoundManager _SoundManager;
     public static DeckManager instance;
-
     public List<CardData> deck = new List<CardData>();
     public List<PlayerBase> players = new List<PlayerBase>();
     public Transform deckSpawnPoint;
@@ -17,6 +15,7 @@ public class DeckManager : MonoBehaviour
     public int cardsPerPlayer = 7;
     public GameObject cardPrefab;
     public TurnManager turnManager;
+    SoundManager _SoundManager;
     AudioSource Sc;
 
     void Awake()
@@ -186,24 +185,18 @@ public class DeckManager : MonoBehaviour
         player.cards.Add(card);
     }
 
-    /// <summary>
-    /// Called when the human player taps the deck to draw.
-    /// Respects the stacking-phase lock in Hard mode.
-    /// </summary>
     public void PlayerDraw()
     {
         PlayerBase player = players[currentPlayerIndex];
 
         if (player.isBot) return;
 
-        // Hard mode: during the stacking window the draw button is locked
         if (!TurnManager.instance.CanDrawNow())
         {
             Debug.Log("Stacking window is still open — draw is locked.");
             return;
         }
 
-        // If the player has a playable card they cannot draw (except under a penalty)
         if (TurnManager.instance.drawStack <= 0)
         {
             foreach (CardData card in player.cards)
