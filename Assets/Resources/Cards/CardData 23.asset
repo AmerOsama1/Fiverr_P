@@ -1,0 +1,19 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 93f83ccabb5ef7545bbfc8408fe40fc4, type: 3}
+  m_Name: CardData 23
+  m_EditorClassIdentifier: Assembly-CSharp::CardData
+  color: 2
+  secondColor: 2
+  type: 1
+  Number: 11
+  cardSprite: {fileID: 2712197154294826894, guid: cf8d76d9b20460a48b4d7da11e1f92c1, type: 3}
