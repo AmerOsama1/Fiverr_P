@@ -41,7 +41,6 @@ public class TurnManager : MonoBehaviour
     bool unoCalled      = false;
     bool isTurnLoopRunning = false;
 
-    // Tracks which bot coroutine is currently running so jump-in can cancel it
     Coroutine currentBotRoutine;
     Coroutine playerTurnRoutine;
     Coroutine hintRoutine;
@@ -86,7 +85,6 @@ public class TurnManager : MonoBehaviour
 
         while (true)
         {
-            // Skip: عدي دور اللاعب الحالي
             if (skipNextTurn)
             {
                 skipNextTurn = false;
@@ -116,11 +114,8 @@ public class TurnManager : MonoBehaviour
                 playerTurnRoutine = null;
             }
 
-            // Jump-In: currentPlayerIndex already set inside PlayAnyCard
-           // دايمًا حرّك الدور مرة واحدة
 AdvanceTurn();
 
-// reset الفلاج
 jumpInHappened = false;
             yield return new WaitForSeconds(0.1f);
             CheckBotJumpIn();
@@ -183,7 +178,6 @@ jumpInHappened = false;
                     ? playable.secondColor
                     : playable.color;
                 playable.color = chosen;
-                // Update indicator: easy = permanent, hard = popup only
                 SetColorIndicatorForMode(chosen);
             }
 
@@ -210,7 +204,6 @@ jumpInHappened = false;
         currentTableCard      = card;
         deckManager.firstCard = currentTableCard;
 
-        // Update color indicator based on mode
         SetColorIndicatorForMode(card.color);
 
         Debug.Log("Bot played: " + card.name);
@@ -263,7 +256,6 @@ jumpInHappened = false;
         }
         else if (CanJumpIn(cardView.cardData))
         {
-            // Stop whatever is running for the current player
             if (currentBotRoutine != null)
             {
                 StopCoroutine(currentBotRoutine);
@@ -305,7 +297,6 @@ jumpInHappened = false;
             unoRoutine = StartCoroutine(UNOCountdown(player));
         }
 
-        // Wild / WildDraw4 → color picker first, turn ends after color chosen
         if (card.type == CardType.Wild || card.type == CardType.WildDraw4)
         {
             OpenColorPicker();
@@ -338,7 +329,6 @@ jumpInHappened = false;
 
             case CardType.Draw2:
             {
-                // Snapshot next player NOW before anything changes
                 int nextIdx     = WrapIndex(currentPlayerIndex + turnDirection);
                 PlayerBase next = players[nextIdx];
                 deckManager.DrawCardForPlayer(next);
@@ -370,7 +360,6 @@ jumpInHappened = false;
                 break;
 
             case CardType.WildDraw4:
-                // Snapshot current index NOW for HandleDraw4
                 StartCoroutine(HandleDraw4(currentPlayerIndex));
                 if (isBot)
                 {
@@ -411,11 +400,9 @@ jumpInHappened = false;
         currentTableCard.color = color;
         colorPickerPanel.SetActive(false);
 
-        // Easy: always show. Hard: popup then hide.
         SetColorIndicatorForMode(color);
 
-        // WildDraw4: draw for next player after color chosen
-        // Snapshot current index NOW
+     
         if (currentTableCard.type == CardType.WildDraw4)
             StartCoroutine(HandleDraw4(currentPlayerIndex));
 
@@ -426,22 +413,16 @@ jumpInHappened = false;
         ScheduleBotJumpInCheck();
     }
 
-    /// <summary>
-    /// Single entry point for color indicator:
-    /// Easy mode  → always set persistent indicator, no popup.
-    /// Hard mode  → show popup only, hide indicator after popup.
-    /// </summary>
+
     void SetColorIndicatorForMode(CardColor color)
     {
         if (easyMode)
         {
             currentColorImage.color = ColorFromCardColor(color);
             ShowColorPopup(color);
-            // No popup in easy mode
         }
         else
         {
-            // Hard: popup visible briefly, indicator stays hidden
             ShowColorPopup(color);
            // currentColorImage.color = Color.clear;
         }
@@ -458,7 +439,6 @@ jumpInHappened = false;
     public void SetGreen()  => SetColor(CardColor.green);
     public void SetYellow() => SetColor(CardColor.yellow);
 
-    // Keep for DeckManager compatibility
     public void UpdateColorIndicator(CardColor color) => SetColorIndicatorForMode(color);
 
     Color ColorFromCardColor(CardColor color) => color switch
@@ -516,10 +496,7 @@ jumpInHappened = false;
     #region Draw4 Handler
     // ═════════════════════════════════════════════════════════════════
 
-    /// <summary>
-    /// Draws 4 cards for the player AFTER the one at snapshotIndex, then skips them.
-    /// snapshotIndex is captured at the moment the card is played — safe from index drift.
-    /// </summary>
+ 
     IEnumerator HandleDraw4(int snapshotIndex)
     {
         yield return new WaitForSeconds(0.1f);
@@ -541,10 +518,8 @@ jumpInHappened = false;
 
     bool CanJumpIn(CardData card)
     {
-        // Easy mode: no overtaking
         if (easyMode) return false;
 
-        // +cards cannot be used to overtake
         if (card.type == CardType.Draw2 || card.type == CardType.WildDraw4|| card.type == CardType.Wild)
             return false;
 
@@ -572,14 +547,12 @@ jumpInHappened = false;
 
     Debug.Log(player.name + " Jump-In!");
 
-    // خلي الدور على اللي بعده مباشرة
     int jumpIndex = players.IndexOf(player);
     currentPlayerIndex = WrapIndex(jumpIndex + turnDirection);
 
     HandleJumpInCardEffects(card);
     GameManager.instance.CheckWin(player);
 
-    // 💣 أهم سطر
     RestartTurnLoop();
 }
 
@@ -620,7 +593,6 @@ void RestartTurnLoop()
                 CardView view = bot.GetCardView(card);
                 if (view != null)
                 {
-                    // Stop current player's coroutine before jump-in
                     if (currentBotRoutine != null)
                     {
                         StopCoroutine(currentBotRoutine);
