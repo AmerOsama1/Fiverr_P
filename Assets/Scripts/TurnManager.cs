@@ -5,6 +5,7 @@ using UnityEngine.UI;
 
 public class TurnManager : MonoBehaviour
 {
+    // ─── Public References ───────────────────────────────────────────
     public List<PlayerBase> players = new List<PlayerBase>();
     public DeckManager deckManager;
     public ResetWildCards reset;
@@ -13,34 +14,35 @@ public class TurnManager : MonoBehaviour
     public GameObject redButton, blueButton, greenButton, yellowButton;
     public GameObject unoButton;
 
-
     [Header("Color Flash Popup")]
     public GameObject colorPopupObject;
     public Image colorPopupImage;
     public float colorPopupDuration = 2f;
 
-
+    // ─── Turn Settings ────────────────────────────────────────────────
     public bool  useTurnTimer   = true;
     public float playerTurnTime = 10f;
     public float botThinkTime   = 2f;
     public float hintDelay      = 5f;
     public bool  easyMode       = true;
+
+    // ─── State ────────────────────────────────────────────────────────
     public int      currentPlayerIndex = 0;
     public bool     isPlayerTurn       = false;
     public CardData currentTableCard;
+
     public static TurnManager instance;
 
+    // ─── Private State ────────────────────────────────────────────────
+    int  turnDirection  = 1;
+    bool playerPlayed   = false;
+    bool jumpInHappened = false;
+    bool skipNextTurn   = false;
+    bool unoCalled      = false;
+    bool isTurnLoopRunning = false;
 
-    int  turnDirection       = 1;
-    int  skipNextPlayerIndex = -1;
-    bool playerPlayed        = false;
-    bool jumpInHappened      = false;
-    bool skipNextTurn        = false;   
-    bool unoCalled           = false;
-    bool isTurnLoopRunning   = false;
-
-
-
+    // Tracks which bot coroutine is currently running so jump-in can cancel it
+    Coroutine currentBotRoutine;
     Coroutine playerTurnRoutine;
     Coroutine hintRoutine;
     Coroutine unoRoutine;
@@ -56,7 +58,9 @@ public class TurnManager : MonoBehaviour
     static readonly Color ClockYellow = new Color(1f,    0.82f, 0.10f);
     static readonly Color ClockRed    = new Color(0.93f, 0.23f, 0.23f);
 
-
+    // ═════════════════════════════════════════════════════════════════
+    #region Unity Lifecycle
+    // ═════════════════════════════════════════════════════════════════
 
     void Awake() => instance = this;
 
@@ -67,6 +71,7 @@ public class TurnManager : MonoBehaviour
         if (colorPopupObject != null) colorPopupObject.SetActive(false);
     }
 
+    #endregion
 
     // ═════════════════════════════════════════════════════════════════
     #region Turn Loop
@@ -81,6 +86,7 @@ public class TurnManager : MonoBehaviour
 
         while (true)
         {
+            // Skip: عدي دور اللاعب الحالي
             if (skipNextTurn)
             {
                 skipNextTurn = false;
@@ -90,6 +96,7 @@ public class TurnManager : MonoBehaviour
                 continue;
             }
 
+            // Reset timers
             foreach (var p in players)
                 if (p.turnTimerImage != null)
                     p.turnTimerImage.fillAmount = 0;
@@ -97,24 +104,24 @@ public class TurnManager : MonoBehaviour
             PlayerBase currentPlayer = players[currentPlayerIndex];
 
             if (currentPlayer.isBot)
-                yield return StartCoroutine(BotTurn(currentPlayer));
+            {
+                currentBotRoutine = StartCoroutine(BotTurn(currentPlayer));
+                yield return currentBotRoutine;
+                currentBotRoutine = null;
+            }
             else
             {
                 playerTurnRoutine = StartCoroutine(PlayerTurn(currentPlayer));
                 yield return playerTurnRoutine;
+                playerTurnRoutine = null;
             }
 
-       
-            if (jumpInHappened)
-            {
-                jumpInHappened      = false;
-                skipNextPlayerIndex = -1;
-            }
-            else
-            {
-                AdvanceTurn();
-            }
+            // Jump-In: currentPlayerIndex already set inside PlayAnyCard
+           // دايمًا حرّك الدور مرة واحدة
+AdvanceTurn();
 
+// reset الفلاج
+jumpInHappened = false;
             yield return new WaitForSeconds(0.1f);
             CheckBotJumpIn();
         }
@@ -128,7 +135,7 @@ public class TurnManager : MonoBehaviour
 
     IEnumerator PlayerTurn(PlayerBase player)
     {
-        playerPlayed    = false;
+        playerPlayed = false;
 
         if (easyMode)
             hintRoutine = StartCoroutine(ShowPlayableHint(player));
@@ -176,8 +183,8 @@ public class TurnManager : MonoBehaviour
                     ? playable.secondColor
                     : playable.color;
                 playable.color = chosen;
-                UpdateColorIndicator(chosen);
-                ShowColorPopup(chosen);
+                // Update indicator: easy = permanent, hard = popup only
+                SetColorIndicatorForMode(chosen);
             }
 
             PlayBotCard(bot, playable);
@@ -197,14 +204,14 @@ public class TurnManager : MonoBehaviour
         return null;
     }
 
-
-
     void PlayBotCard(PlayerBase bot, CardData card)
     {
         bot.cards.Remove(card);
         currentTableCard      = card;
         deckManager.firstCard = currentTableCard;
-        UpdateColorIndicator(card.color);
+
+        // Update color indicator based on mode
+        SetColorIndicatorForMode(card.color);
 
         Debug.Log("Bot played: " + card.name);
 
@@ -239,6 +246,9 @@ public class TurnManager : MonoBehaviour
 
         if (isMyTurn)
         {
+            // Block if already played this turn
+            if (playerPlayed) return;
+
             if (!IsCardPlayable(cardView.cardData))
             {
                 if (!easyMode)
@@ -253,8 +263,19 @@ public class TurnManager : MonoBehaviour
         }
         else if (CanJumpIn(cardView.cardData))
         {
+            // Stop whatever is running for the current player
+            if (currentBotRoutine != null)
+            {
+                StopCoroutine(currentBotRoutine);
+                currentBotRoutine = null;
+            }
+            if (playerTurnRoutine != null)
+            {
+                StopCoroutine(playerTurnRoutine);
+                playerTurnRoutine = null;
+            }
+
             PlayAnyCard(player, cardView);
-            if (playerTurnRoutine != null) StopCoroutine(playerTurnRoutine);
             playerPlayed = true;
         }
     }
@@ -284,6 +305,7 @@ public class TurnManager : MonoBehaviour
             unoRoutine = StartCoroutine(UNOCountdown(player));
         }
 
+        // Wild / WildDraw4 → color picker first, turn ends after color chosen
         if (card.type == CardType.Wild || card.type == CardType.WildDraw4)
         {
             OpenColorPicker();
@@ -305,73 +327,56 @@ public class TurnManager : MonoBehaviour
         {
             case CardType.Skip:
                 skipNextTurn = true;
-                Debug.Log("Skip played — next player's turn will be skipped.");
+                Debug.Log("Skip — next player skipped.");
                 break;
 
-            // ── Reverse ──
             case CardType.Reverse:
                 turnDirection *= -1;
                 if (players.Count == 2)
-                    skipNextTurn = true; 
+                    skipNextTurn = true;
                 break;
 
-            // ── Draw2 ──
             case CardType.Draw2:
-                if (easyMode)
-                {
-                    int nextIdx     = WrapIndex(currentPlayerIndex + turnDirection);
-                    PlayerBase next = players[nextIdx];
-                    deckManager.DrawCardForPlayer(next);
-                    deckManager.DrawCardForPlayer(next);
-                    Debug.Log($"{next.name} drew 2 cards (Easy).");
-                    skipNextTurn = true;
-                }
-                else
-                {
-                    int nextIdx     = WrapIndex(currentPlayerIndex + turnDirection);
-                    PlayerBase next = players[nextIdx];
-                    deckManager.DrawCardForPlayer(next);
-                    deckManager.DrawCardForPlayer(next);
-                    Debug.Log($"{next.name} drew 2 cards (Hard Draw2).");
-                    skipNextTurn = true;
-                }
+            {
+                // Snapshot next player NOW before anything changes
+                int nextIdx     = WrapIndex(currentPlayerIndex + turnDirection);
+                PlayerBase next = players[nextIdx];
+                deckManager.DrawCardForPlayer(next);
+                deckManager.DrawCardForPlayer(next);
+                Debug.Log($"{next.name} drew 2 cards.");
+                skipNextTurn = true;
 
                 if (isBot)
                 {
                     CardColor chosen = Random.value > 0.5f ? card.color : card.secondColor;
                     currentTableCard.color = chosen;
-                    UpdateColorIndicator(chosen);
-                    ShowColorPopup(chosen);
+                    SetColorIndicatorForMode(chosen);
                 }
                 else
                 {
                     OpenTwoColorPicker(card.color, card.secondColor);
                 }
                 break;
+            }
 
-            // ── Wild ──
             case CardType.Wild:
                 if (isBot)
                 {
                     CardColor newColor = GetRandomColor();
                     currentTableCard.color = newColor;
-                    UpdateColorIndicator(newColor);
-                    ShowColorPopup(newColor);
+                    SetColorIndicatorForMode(newColor);
                     Debug.Log("Bot Wild → " + newColor);
                 }
                 break;
 
-            // ── WildDraw4 ──
             case CardType.WildDraw4:
-             
-                StartCoroutine(HandleDraw4());
-
+                // Snapshot current index NOW for HandleDraw4
+                StartCoroutine(HandleDraw4(currentPlayerIndex));
                 if (isBot)
                 {
                     CardColor randomColor = GetRandomColor();
                     currentTableCard.color = randomColor;
-                    UpdateColorIndicator(randomColor);
-                    ShowColorPopup(randomColor);
+                    SetColorIndicatorForMode(randomColor);
                 }
                 break;
         }
@@ -406,18 +411,13 @@ public class TurnManager : MonoBehaviour
         currentTableCard.color = color;
         colorPickerPanel.SetActive(false);
 
-        if (easyMode)
-        {
-            currentColorImage.color = ColorFromCardColor(color);
-        }
-        else
-        {
-            ShowColorPopup(color);
-            StartCoroutine(HideIndicatorAfterDelay(colorPopupDuration));
-        }
+        // Easy: always show. Hard: popup then hide.
+        SetColorIndicatorForMode(color);
 
+        // WildDraw4: draw for next player after color chosen
+        // Snapshot current index NOW
         if (currentTableCard.type == CardType.WildDraw4)
-            StartCoroutine(HandleDraw4());
+            StartCoroutine(HandleDraw4(currentPlayerIndex));
 
         StartCoroutine(DelayedReset(7f));
         playerPlayed = true;
@@ -426,11 +426,25 @@ public class TurnManager : MonoBehaviour
         ScheduleBotJumpInCheck();
     }
 
-    IEnumerator HideIndicatorAfterDelay(float delay)
+    /// <summary>
+    /// Single entry point for color indicator:
+    /// Easy mode  → always set persistent indicator, no popup.
+    /// Hard mode  → show popup only, hide indicator after popup.
+    /// </summary>
+    void SetColorIndicatorForMode(CardColor color)
     {
-        yield return new WaitForSeconds(delay);
-        if (!easyMode)
-            currentColorImage.color = Color.clear;
+        if (easyMode)
+        {
+            currentColorImage.color = ColorFromCardColor(color);
+            ShowColorPopup(color);
+            // No popup in easy mode
+        }
+        else
+        {
+            // Hard: popup visible briefly, indicator stays hidden
+            ShowColorPopup(color);
+           // currentColorImage.color = Color.clear;
+        }
     }
 
     IEnumerator DelayedReset(float delay)
@@ -444,12 +458,8 @@ public class TurnManager : MonoBehaviour
     public void SetGreen()  => SetColor(CardColor.green);
     public void SetYellow() => SetColor(CardColor.yellow);
 
-    public void UpdateColorIndicator(CardColor color)
-    {
-    
-        if (easyMode)
-            currentColorImage.color = ColorFromCardColor(color);
-    }
+    // Keep for DeckManager compatibility
+    public void UpdateColorIndicator(CardColor color) => SetColorIndicatorForMode(color);
 
     Color ColorFromCardColor(CardColor color) => color switch
     {
@@ -482,7 +492,7 @@ public class TurnManager : MonoBehaviour
     #endregion
 
     // ═════════════════════════════════════════════════════════════════
-    #region Color Popup (Hard Mode)
+    #region Color Popup
     // ═════════════════════════════════════════════════════════════════
 
     public void ShowColorPopup(CardColor color)
@@ -503,13 +513,17 @@ public class TurnManager : MonoBehaviour
     #endregion
 
     // ═════════════════════════════════════════════════════════════════
-    #region Draw Penalty
+    #region Draw4 Handler
     // ═════════════════════════════════════════════════════════════════
 
-    IEnumerator HandleDraw4()
+    /// <summary>
+    /// Draws 4 cards for the player AFTER the one at snapshotIndex, then skips them.
+    /// snapshotIndex is captured at the moment the card is played — safe from index drift.
+    /// </summary>
+    IEnumerator HandleDraw4(int snapshotIndex)
     {
         yield return new WaitForSeconds(0.1f);
-        int nextIdx     = WrapIndex(currentPlayerIndex + turnDirection);
+        int nextIdx     = WrapIndex(snapshotIndex + turnDirection);
         PlayerBase next = players[nextIdx];
 
         for (int i = 0; i < 4; i++)
@@ -527,9 +541,11 @@ public class TurnManager : MonoBehaviour
 
     bool CanJumpIn(CardData card)
     {
+        // Easy mode: no overtaking
         if (easyMode) return false;
 
-        if (card.type == CardType.Draw2 || card.type == CardType.WildDraw4)
+        // +cards cannot be used to overtake
+        if (card.type == CardType.Draw2 || card.type == CardType.WildDraw4|| card.type == CardType.Wild)
             return false;
 
         CardData top = deckManager.firstCard;
@@ -541,39 +557,43 @@ public class TurnManager : MonoBehaviour
         return card.type == top.type && card.type != CardType.Number;
     }
 
-    void PlayAnyCard(PlayerBase player, CardView cardView)
-    {
-        CardData card = cardView.cardData;
+  void PlayAnyCard(PlayerBase player, CardView cardView)
+{
+    CardData card = cardView.cardData;
 
-        player.cards.Remove(card);
-        currentTableCard      = card;
-        deckManager.firstCard = card;
-        cardView.Setup(card, true);
+    player.cards.Remove(card);
+    currentTableCard      = card;
+    deckManager.firstCard = card;
+    cardView.Setup(card, true);
 
-        CardMover mover = cardView.GetComponent<CardMover>();
-        mover.MoveToWorld(deckManager.tableCardPoint);
-        cardView.transform.SetParent(deckManager.tableCardPoint);
+    CardMover mover = cardView.GetComponent<CardMover>();
+    mover.MoveToWorld(deckManager.tableCardPoint);
+    cardView.transform.SetParent(deckManager.tableCardPoint);
 
-        Debug.Log(player.name + " Jump-In!");
+    Debug.Log(player.name + " Jump-In!");
 
-        int skippedPlayerIndex = currentPlayerIndex;
-        currentPlayerIndex     = players.IndexOf(player);
-        jumpInHappened         = true;
+    // خلي الدور على اللي بعده مباشرة
+    int jumpIndex = players.IndexOf(player);
+    currentPlayerIndex = WrapIndex(jumpIndex + turnDirection);
 
-        HandleJumpInCardEffects(card);
-        GameManager.instance.CheckWin(player);
+    HandleJumpInCardEffects(card);
+    GameManager.instance.CheckWin(player);
 
-        if (playerTurnRoutine != null) StopCoroutine(playerTurnRoutine);
+    // 💣 أهم سطر
+    RestartTurnLoop();
+}
 
-        skipNextPlayerIndex = skippedPlayerIndex;
-        currentPlayerIndex  = WrapIndex(currentPlayerIndex + turnDirection);
-    }
+void RestartTurnLoop()
+{
+    StopAllCoroutines();
+    isTurnLoopRunning = false;
+    StartCoroutine(TurnLoop());
+}
 
     void HandleJumpInCardEffects(CardData card)
     {
         switch (card.type)
         {
-     
             case CardType.Skip:
                 skipNextTurn = true;
                 break;
@@ -600,6 +620,13 @@ public class TurnManager : MonoBehaviour
                 CardView view = bot.GetCardView(card);
                 if (view != null)
                 {
+                    // Stop current player's coroutine before jump-in
+                    if (currentBotRoutine != null)
+                    {
+                        StopCoroutine(currentBotRoutine);
+                        currentBotRoutine = null;
+                    }
+
                     Debug.Log(bot.name + " Jump-In!");
                     PlayAnyCard(bot, view);
                     return;
