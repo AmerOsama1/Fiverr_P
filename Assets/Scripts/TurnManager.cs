@@ -13,26 +13,25 @@ public class TurnManager : MonoBehaviour
     public GameObject redButton, blueButton, greenButton, yellowButton;
     public GameObject unoButton;
 
+
     [Header("Color Flash Popup")]
     public GameObject colorPopupObject;
     public Image colorPopupImage;
     public float colorPopupDuration = 2f;
+
 
     public bool  useTurnTimer   = true;
     public float playerTurnTime = 10f;
     public float botThinkTime   = 2f;
     public float hintDelay      = 5f;
     public bool  easyMode       = true;
-
     public int      currentPlayerIndex = 0;
     public bool     isPlayerTurn       = false;
     public CardData currentTableCard;
-
     public static TurnManager instance;
 
 
     int  turnDirection       = 1;
-    public int drawStack     = 0;
     int  skipNextPlayerIndex = -1;
     bool playerPlayed        = false;
     bool jumpInHappened      = false;
@@ -40,8 +39,7 @@ public class TurnManager : MonoBehaviour
     bool unoCalled           = false;
     bool isTurnLoopRunning   = false;
 
-    bool inStackingPhase     = false;
-    bool stackOccurred       = false;
+
 
     Coroutine playerTurnRoutine;
     Coroutine hintRoutine;
@@ -58,9 +56,7 @@ public class TurnManager : MonoBehaviour
     static readonly Color ClockYellow = new Color(1f,    0.82f, 0.10f);
     static readonly Color ClockRed    = new Color(0.93f, 0.23f, 0.23f);
 
-    // ═════════════════════════════════════════════════════════════════
-    #region Unity Lifecycle
-    // ═════════════════════════════════════════════════════════════════
+
 
     void Awake() => instance = this;
 
@@ -71,7 +67,6 @@ public class TurnManager : MonoBehaviour
         if (colorPopupObject != null) colorPopupObject.SetActive(false);
     }
 
-    #endregion
 
     // ═════════════════════════════════════════════════════════════════
     #region Turn Loop
@@ -109,7 +104,7 @@ public class TurnManager : MonoBehaviour
                 yield return playerTurnRoutine;
             }
 
-
+       
             if (jumpInHappened)
             {
                 jumpInHappened      = false;
@@ -134,14 +129,6 @@ public class TurnManager : MonoBehaviour
     IEnumerator PlayerTurn(PlayerBase player)
     {
         playerPlayed    = false;
-        inStackingPhase = false;
-        stackOccurred   = false;
-
-        if (!easyMode && drawStack > 0)
-        {
-            yield return StartCoroutine(DrawPenaltyPlayerTurn(player));
-            yield break;
-        }
 
         if (easyMode)
             hintRoutine = StartCoroutine(ShowPlayableHint(player));
@@ -160,53 +147,7 @@ public class TurnManager : MonoBehaviour
         playerPlayed = true;
     }
 
-  
-    IEnumerator DrawPenaltyPlayerTurn(PlayerBase player)
-    {
-        inStackingPhase = true;
-        stackOccurred   = false;
-        Debug.Log($"Player targeted with +{drawStack}. Checking for stackable card...");
-
-        CardData stackable = GetPlayerStackableCard(player);
-
-        if (stackable == null)
-        {
-            inStackingPhase = false;
-            Debug.Log($"No stackable card — auto-draw {drawStack}.");
-            for (int i = 0; i < drawStack; i++)
-                deckManager.DrawCardForPlayer(player);
-            drawStack    = 0;
-            playerPlayed = true;
-            yield break;
-        }
-
-        Debug.Log($"Stackable card found — giving 2s window.");
-        SetClockColor(player, ClockYellow);
-        float window = 2f;
-        float timer  = window;
-
-        while (timer > 0 && !playerPlayed)
-        {
-            timer -= Time.deltaTime;
-            UpdateClockFill(player, Mathf.Clamp01(timer / window));
-            UpdateClockColor(player, Mathf.Clamp01(timer / window));
-            yield return null;
-        }
-
-        inStackingPhase = false;
-
-        if (!playerPlayed)
-        {
-            Debug.Log($"Stack window expired — auto-draw {drawStack}.");
-            for (int i = 0; i < drawStack; i++)
-                deckManager.DrawCardForPlayer(player);
-            drawStack = 0;
-        }
-
-        playerPlayed = true;
-    }
-
-    public bool CanDrawNow() => !inStackingPhase;
+    public bool CanDrawNow() => true;
 
     public void EndPlayerTurn() => playerPlayed = true;
 
@@ -218,47 +159,6 @@ public class TurnManager : MonoBehaviour
 
     IEnumerator BotTurn(PlayerBase bot)
     {
-        if (!easyMode && drawStack > 0)
-        {
-            PlayerBase human = players.Find(p => !p.isBot);
-            bool humanCanStack = human != null && GetPlayerStackableCard(human) != null;
-
-            if (humanCanStack)
-            {
-                Debug.Log($"Bot {bot.name} has penalty — pausing 2.5s for human to stack.");
-                inStackingPhase = true;
-                yield return new WaitForSeconds(2.5f);
-                inStackingPhase = false;
-            }
-
-            if (stackOccurred)
-            {
-                Debug.Log($"{bot.name} penalty cancelled — human stacked.");
-                stackOccurred = false;
-                yield break;
-            }
-
-            for (int i = 0; i < drawStack; i++)
-                deckManager.DrawCardForPlayer(bot);
-            Debug.Log($"{bot.name} drew {drawStack} penalty cards.");
-            drawStack    = 0;
-            skipNextTurn = true;
-            yield break;
-        }
-
-        bool isDrawCard = currentTableCard != null
-                       && (currentTableCard.type == CardType.Draw2 || currentTableCard.type == CardType.WildDraw4);
-        if (isDrawCard)
-        {
-            int nextIdx           = WrapIndex(currentPlayerIndex + turnDirection);
-            PlayerBase nextPlayer = players[nextIdx];
-            if (!nextPlayer.isBot && GetPlayerStackableCard(nextPlayer) != null)
-            {
-                Debug.Log("Bot pausing 2.5s — human has stackable card.");
-                yield return new WaitForSeconds(2.5f);
-            }
-        }
-
         SetClockColor(bot, ClockGreen);
         yield return StartCoroutine(RunClockTimer(bot, botThinkTime, null));
 
@@ -298,27 +198,6 @@ public class TurnManager : MonoBehaviour
     }
 
 
-    bool CanStackOn(CardData candidate, CardData tableCard)
-    {
-        if (candidate.type != tableCard.type) return false;
-        bool sameColors = (candidate.color == tableCard.color && candidate.secondColor == tableCard.secondColor)
-                       || (candidate.color == tableCard.secondColor && candidate.secondColor == tableCard.color);
-        return sameColors;
-    }
-
-    CardData GetBotStackableCard(PlayerBase bot)
-    {
-        foreach (CardData card in bot.cards)
-            if (CanStackOn(card, currentTableCard)) return card;
-        return null;
-    }
-
-    CardData GetPlayerStackableCard(PlayerBase player)
-    {
-        foreach (CardData card in player.cards)
-            if (CanStackOn(card, currentTableCard)) return card;
-        return null;
-    }
 
     void PlayBotCard(PlayerBase bot, CardData card)
     {
@@ -368,26 +247,6 @@ public class TurnManager : MonoBehaviour
                     deckManager.DrawCardForPlayer(player);
                 }
                 return;
-            }
-
-            if (easyMode && drawStack > 0)
-            {
-                bool isStackCard = cardView.cardData.type == CardType.Draw2 ||
-                                   cardView.cardData.type == CardType.WildDraw4;
-                if (isStackCard)
-                {
-                    Debug.Log("Easy mode: stacking not allowed — you must draw.");
-                    return;
-                }
-            }
-
-            if (!easyMode && drawStack > 0 && inStackingPhase)
-            {
-                if (!CanStackOn(cardView.cardData, currentTableCard))
-                {
-                    Debug.Log("Hard mode: card cannot stack — must be identical card.");
-                    return;
-                }
             }
 
             PlayPlayerCard(player, cardView);
@@ -444,7 +303,6 @@ public class TurnManager : MonoBehaviour
     {
         switch (card.type)
         {
-            // ── Skip:─
             case CardType.Skip:
                 skipNextTurn = true;
                 Debug.Log("Skip played — next player's turn will be skipped.");
@@ -465,14 +323,17 @@ public class TurnManager : MonoBehaviour
                     PlayerBase next = players[nextIdx];
                     deckManager.DrawCardForPlayer(next);
                     deckManager.DrawCardForPlayer(next);
-                    Debug.Log($"{next.name} drew 2 cards (Easy Draw2).");
+                    Debug.Log($"{next.name} drew 2 cards (Easy).");
                     skipNextTurn = true;
                 }
                 else
                 {
-                    if (drawStack > 0) stackOccurred = true;
-                    drawStack += 2;
-                    Debug.Log($"Hard: drawStack={drawStack}. Penalty passed forward.");
+                    int nextIdx     = WrapIndex(currentPlayerIndex + turnDirection);
+                    PlayerBase next = players[nextIdx];
+                    deckManager.DrawCardForPlayer(next);
+                    deckManager.DrawCardForPlayer(next);
+                    Debug.Log($"{next.name} drew 2 cards (Hard Draw2).");
+                    skipNextTurn = true;
                 }
 
                 if (isBot)
@@ -502,16 +363,8 @@ public class TurnManager : MonoBehaviour
 
             // ── WildDraw4 ──
             case CardType.WildDraw4:
-                if (easyMode)
-                {
-                    StartCoroutine(HandleDraw4Easy());
-                }
-                else
-                {
-                    if (drawStack > 0) stackOccurred = true;
-                    drawStack += 4;
-                    Debug.Log($"Hard: drawStack={drawStack}. Penalty passed forward (WD4).");
-                }
+             
+                StartCoroutine(HandleDraw4());
 
                 if (isBot)
                 {
@@ -553,7 +406,6 @@ public class TurnManager : MonoBehaviour
         currentTableCard.color = color;
         colorPickerPanel.SetActive(false);
 
-        
         if (easyMode)
         {
             currentColorImage.color = ColorFromCardColor(color);
@@ -564,18 +416,8 @@ public class TurnManager : MonoBehaviour
             StartCoroutine(HideIndicatorAfterDelay(colorPopupDuration));
         }
 
-        
         if (currentTableCard.type == CardType.WildDraw4)
-        {
-            if (easyMode)
-                StartCoroutine(HandleDraw4Easy());
-            else
-            {
-                drawStack    += 4;
-                stackOccurred = false;
-                Debug.Log($"Hard: drawStack={drawStack} after WD4 color chosen.");
-            }
-        }
+            StartCoroutine(HandleDraw4());
 
         StartCoroutine(DelayedReset(7f));
         playerPlayed = true;
@@ -604,7 +446,7 @@ public class TurnManager : MonoBehaviour
 
     public void UpdateColorIndicator(CardColor color)
     {
-       
+    
         if (easyMode)
             currentColorImage.color = ColorFromCardColor(color);
     }
@@ -664,8 +506,9 @@ public class TurnManager : MonoBehaviour
     #region Draw Penalty
     // ═════════════════════════════════════════════════════════════════
 
-    IEnumerator HandleDraw4Easy()
+    IEnumerator HandleDraw4()
     {
+        yield return new WaitForSeconds(0.1f);
         int nextIdx     = WrapIndex(currentPlayerIndex + turnDirection);
         PlayerBase next = players[nextIdx];
 
@@ -673,8 +516,7 @@ public class TurnManager : MonoBehaviour
             deckManager.DrawCardForPlayer(next);
 
         skipNextTurn = true;
-        yield return new WaitForSeconds(0.4f);
-        Debug.Log($"{next.name} drew 4 cards (Easy WD4) and is skipped.");
+        Debug.Log($"{next.name} drew 4 cards (WD4) and is skipped.");
     }
 
     #endregion
@@ -685,8 +527,10 @@ public class TurnManager : MonoBehaviour
 
     bool CanJumpIn(CardData card)
     {
-       
         if (easyMode) return false;
+
+        if (card.type == CardType.Draw2 || card.type == CardType.WildDraw4)
+            return false;
 
         CardData top = deckManager.firstCard;
         if (card.color != top.color) return false;
@@ -729,12 +573,7 @@ public class TurnManager : MonoBehaviour
     {
         switch (card.type)
         {
-            case CardType.Draw2:
-                if (!easyMode) { drawStack += 2; stackOccurred = true; }
-                break;
-            case CardType.WildDraw4:
-                if (!easyMode) { drawStack += 4; stackOccurred = true; }
-                break;
+     
             case CardType.Skip:
                 skipNextTurn = true;
                 break;
@@ -746,7 +585,6 @@ public class TurnManager : MonoBehaviour
 
     void CheckBotJumpIn()
     {
-        
         if (easyMode) return;
 
         PlayerBase current = players[currentPlayerIndex];

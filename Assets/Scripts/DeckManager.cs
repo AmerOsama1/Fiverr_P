@@ -193,19 +193,16 @@ public class DeckManager : MonoBehaviour
 
         if (!TurnManager.instance.CanDrawNow())
         {
-            Debug.Log("Stacking window is still open — draw is locked.");
+            Debug.Log("Draw is locked right now.");
             return;
         }
 
-        if (TurnManager.instance.drawStack <= 0)
+        foreach (CardData card in player.cards)
         {
-            foreach (CardData card in player.cards)
+            if (TurnManager.instance.IsCardPlayable(card))
             {
-                if (TurnManager.instance.IsCardPlayable(card))
-                {
-                    Debug.Log("You have a playable card! You cannot draw.");
-                    return;
-                }
+                Debug.Log("You have a playable card! You cannot draw.");
+                return;
             }
         }
 

@@ -1,10 +1,10 @@
 using UnityEngine;
 using TMPro;
+using UnityEngine.UI;
 public class GameManager : MonoBehaviour
 {
     public static GameManager instance;
-    public GameObject resultPopup;
-    public TextMeshProUGUI resultText;
+    public GameObject Win,Lose;
     SoundManager _SoundManager;
 
 
@@ -28,10 +28,9 @@ public class GameManager : MonoBehaviour
 void PlayerWin()
 {
    // Debug.Log("Player Win!");
-    if (resultPopup != null)
+    if (Win != null)
     {
-        resultText.text = "YOU WIN!";
-        resultPopup.SetActive(true);
+        checkSprite(Win);
     }
     _SoundManager.PlaySoundclipOneShot(_SoundManager.WinClip,_SoundManager.sc);
     Time.timeScale = 0;
@@ -40,12 +39,15 @@ void PlayerWin()
 void PlayerLose()
 {
    // Debug.Log("Player Lose!");
-    if (resultPopup != null)
+    if (Lose != null)
     {
-        resultText.text = "YOU LOSE!";
-        resultPopup.SetActive(true);
+        checkSprite(Lose);
     }
     _SoundManager.PlaySoundclipOneShot(_SoundManager.LoseClip,_SoundManager.sc);
     Time.timeScale = 0;
+}
+
+void checkSprite(GameObject image){
+   image.SetActive(true);
 }
 }
