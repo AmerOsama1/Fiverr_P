@@ -327,27 +327,39 @@ jumpInHappened = false;
                     skipNextTurn = true;
                 break;
 
-            case CardType.Draw2:
-            {
-                int nextIdx     = WrapIndex(currentPlayerIndex + turnDirection);
-                PlayerBase next = players[nextIdx];
-                deckManager.DrawCardForPlayer(next);
-                deckManager.DrawCardForPlayer(next);
-                Debug.Log($"{next.name} drew 2 cards.");
-                skipNextTurn = true;
+           case CardType.Draw2:
+{
+    int nextIdx = WrapIndex(currentPlayerIndex + turnDirection);
+    PlayerBase next = players[nextIdx];
 
-                if (isBot)
-                {
-                    CardColor chosen = Random.value > 0.5f ? card.color : card.secondColor;
-                    currentTableCard.color = chosen;
-                    SetColorIndicatorForMode(chosen);
-                }
-                else
-                {
-                    OpenTwoColorPicker(card.color, card.secondColor);
-                }
-                break;
-            }
+    deckManager.DrawCardForPlayer(next);
+    deckManager.DrawCardForPlayer(next);
+
+    Debug.Log($"{next.name} drew 2 cards.");
+
+    if (players.Count == 2)
+    {
+        // 👇 أهم سطر
+        currentPlayerIndex = nextIdx;
+    }
+    else
+    {
+        skipNextTurn = true;
+    }
+
+    if (isBot)
+    {
+        CardColor chosen = Random.value > 0.5f ? card.color : card.secondColor;
+        currentTableCard.color = chosen;
+        SetColorIndicatorForMode(chosen);
+    }
+    else
+    {
+        OpenTwoColorPicker(card.color, card.secondColor);
+    }
+
+    break;
+}
 
             case CardType.Wild:
                 if (isBot)
