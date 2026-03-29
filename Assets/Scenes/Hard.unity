@@ -5240,7 +5240,7 @@ GameObject:
   - component: {fileID: 5013838815686825934}
   m_Layer: 5
   m_Name: win
-  m_TagString: EditorOnly
+  m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
@@ -5258,7 +5258,7 @@ GameObject:
   - component: {fileID: 2743519952959317425}
   m_Layer: 5
   m_Name: lose
-  m_TagString: EditorOnly
+  m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
