@@ -18,6 +18,9 @@ public class DeckManager : MonoBehaviour
     SoundManager _SoundManager;
     AudioSource Sc;
 
+    float _lastDrawTime = -99f;
+    const float DrawCooldown = 0.5f;  
+
     void Awake()
     {
         instance = this;
@@ -187,9 +190,18 @@ public class DeckManager : MonoBehaviour
 
     public void PlayerDraw()
     {
-        PlayerBase player = players[currentPlayerIndex];
+        if (Time.time - _lastDrawTime < DrawCooldown)
+        {
+            Debug.Log("Draw cooldown — ignoring rapid click.");
+            return;
+        }
 
-        if (player.isBot) return;
+        int currentIndex = TurnManager.instance.currentPlayerIndex;
+        if (currentIndex < 0 || currentIndex >= players.Count) return;
+
+        PlayerBase currentPlayer = players[currentIndex];
+
+        if (currentPlayer.isBot) return;
 
         if (!TurnManager.instance.CanDrawNow())
         {
@@ -197,7 +209,7 @@ public class DeckManager : MonoBehaviour
             return;
         }
 
-        foreach (CardData card in player.cards)
+        foreach (CardData card in currentPlayer.cards)
         {
             if (TurnManager.instance.IsCardPlayable(card))
             {
@@ -206,7 +218,8 @@ public class DeckManager : MonoBehaviour
             }
         }
 
-        DrawCardForPlayer(player);
+        _lastDrawTime = Time.time;
+        DrawCardForPlayer(currentPlayer);
         TurnManager.instance.EndPlayerTurn();
     }
 

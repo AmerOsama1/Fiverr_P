@@ -20,11 +20,12 @@ public class TurnManager : MonoBehaviour
     public float colorPopupDuration = 2f;
 
     // ─── Turn Settings ────────────────────────────────────────────────
-    public bool  useTurnTimer   = true;
-    public float playerTurnTime = 10f;
-    public float botThinkTime   = 2f;
-    public float hintDelay      = 5f;
-    public bool  easyMode       = true;
+    public bool  useTurnTimer      = true;
+    public float playerTurnTime    = 10f;
+    public float botThinkTime      = 2f;
+    public float hintDelay         = 5f;
+    public bool  easyMode          = true;
+    public float stackWindowTime   = 3f;   
 
     // ─── State ────────────────────────────────────────────────────────
     public int      currentPlayerIndex = 0;
@@ -34,15 +35,22 @@ public class TurnManager : MonoBehaviour
     public static TurnManager instance;
 
     // ─── Private State ────────────────────────────────────────────────
-    int  turnDirection  = 1;
-    bool playerPlayed   = false;
-    bool jumpInHappened = false;
-    bool skipNextTurn   = false;
-    bool unoCalled      = false;
+    int  turnDirection     = 1;
+    bool playerPlayed      = false;
+    bool jumpInHappened    = false;
+    bool skipNextTurn      = false;
+    bool unoCalled         = false;
     bool isTurnLoopRunning = false;
+
+    // ── Stack System ──────────────────────────────────────────────────
+   
+    int  pendingDrawCount  = 0;
+    int  pendingDrawTarget = -1;   
+    bool inStackWindow     = false;
 
     Coroutine currentBotRoutine;
     Coroutine playerTurnRoutine;
+    Coroutine stackWindowRoutine;
     Coroutine hintRoutine;
     Coroutine unoRoutine;
     Coroutine botJumpInRoutine;
@@ -114,12 +122,93 @@ public class TurnManager : MonoBehaviour
                 playerTurnRoutine = null;
             }
 
-AdvanceTurn();
+            if (jumpInHappened)
+                jumpInHappened = false;
+            else
+                AdvanceTurn();
 
-jumpInHappened = false;
             yield return new WaitForSeconds(0.1f);
             CheckBotJumpIn();
         }
+    }
+
+    #endregion
+
+    // ═════════════════════════════════════════════════════════════════
+    #region Stack Window
+    // ═════════════════════════════════════════════════════════════════
+
+
+    void OpenStackWindow(int targetIndex, int addedCards)
+    {
+        if (easyMode)
+        {
+            PlayerBase target = players[targetIndex];
+            for (int i = 0; i < addedCards; i++)
+                deckManager.DrawCardForPlayer(target);
+            Debug.Log($"{target.name} drew {addedCards} cards (Easy, no stacking).");
+            skipNextTurn = true;
+            return;
+        }
+
+        pendingDrawCount  += addedCards;
+        pendingDrawTarget  = targetIndex;
+        inStackWindow      = true;
+
+        Debug.Log($"Stack window open — target: {players[targetIndex].name}, total: {pendingDrawCount}");
+
+        if (stackWindowRoutine != null) StopCoroutine(stackWindowRoutine);
+        stackWindowRoutine = StartCoroutine(StackWindowCountdown());
+    }
+
+    IEnumerator StackWindowCountdown()
+    {
+        float timer = stackWindowTime;
+        while (timer > 0)
+        {
+            timer -= Time.deltaTime;
+            yield return null;
+
+            if (!inStackWindow) yield break;
+        }
+
+        inStackWindow = false;
+        if (pendingDrawTarget >= 0 && pendingDrawTarget < players.Count)
+        {
+            PlayerBase target = players[pendingDrawTarget];
+            Debug.Log($"Window expired — {target.name} draws {pendingDrawCount} cards.");
+
+            for (int i = 0; i < pendingDrawCount; i++)
+                deckManager.DrawCardForPlayer(target);
+
+            currentPlayerIndex = WrapIndex(pendingDrawTarget + turnDirection);
+            pendingDrawCount   = 0;
+            pendingDrawTarget  = -1;
+
+            RestartTurnLoop();
+        }
+    }
+
+    void OnPlayerStacked(PlayerBase stacker, int addedCards)
+    {
+        if (stackWindowRoutine != null) StopCoroutine(stackWindowRoutine);
+        inStackWindow = false;
+
+        int stackerIndex   = players.IndexOf(stacker);
+        int newTargetIndex = WrapIndex(stackerIndex + turnDirection);
+
+        Debug.Log($"{stacker.name} stacked +{addedCards}! New target: {players[newTargetIndex].name}, total: {pendingDrawCount + addedCards}");
+
+        OpenStackWindow(newTargetIndex, addedCards);
+    }
+
+    void RestartTurnLoop()
+    {
+        StopAllCoroutines();
+        isTurnLoopRunning = false;
+        playerPlayed      = false;
+        inStackWindow     = false;
+        StartCoroutine(TurnLoop());
     }
 
     #endregion
@@ -165,8 +254,19 @@ jumpInHappened = false;
         yield return StartCoroutine(RunClockTimer(bot, botThinkTime, null));
 
         if (bot.turnTimerImage != null) bot.turnTimerImage.fillAmount = 0f;
-
         yield return new WaitForSeconds(0.3f);
+
+        // If there's an open stack window, bot tries to stack
+        if (inStackWindow && pendingDrawTarget == players.IndexOf(bot))
+        {
+            CardData stackCard = GetBotStackableCard(bot);
+            if (stackCard != null)
+            {
+                PlayBotCard(bot, stackCard);
+                yield break;
+            }
+            yield break;
+        }
 
         CardData playable = GetBotPlayableCard(bot);
 
@@ -180,7 +280,6 @@ jumpInHappened = false;
                 playable.color = chosen;
                 SetColorIndicatorForMode(chosen);
             }
-
             PlayBotCard(bot, playable);
         }
         else
@@ -198,13 +297,18 @@ jumpInHappened = false;
         return null;
     }
 
+    CardData GetBotStackableCard(PlayerBase bot)
+    {
+        foreach (CardData card in bot.cards)
+            if (IsIdenticalPlusCard(card, currentTableCard)) return card;
+        return null;
+    }
+
     void PlayBotCard(PlayerBase bot, CardData card)
     {
         bot.cards.Remove(card);
         currentTableCard      = card;
         deckManager.firstCard = currentTableCard;
-
-        SetColorIndicatorForMode(card.color);
 
         Debug.Log("Bot played: " + card.name);
 
@@ -218,7 +322,7 @@ jumpInHappened = false;
         mover.MoveToWorld(deckManager.tableCardPoint);
         cardView.transform.SetParent(deckManager.tableCardPoint);
 
-        ApplyCardEffects(card, isBot: true);
+        ApplyCardEffects(card, isBot: true, player: bot);
         GameManager.instance.CheckWin(bot);
 
         ScheduleBotJumpInCheck();
@@ -237,16 +341,66 @@ jumpInHappened = false;
 
         bool isMyTurn = (players[currentPlayerIndex] == player);
 
+        if (!easyMode && inStackWindow && IsIdenticalPlusCard(cardView.cardData, currentTableCard))
+        {
+            if (currentBotRoutine  != null) { StopCoroutine(currentBotRoutine);  currentBotRoutine  = null; }
+            if (playerTurnRoutine  != null) { StopCoroutine(playerTurnRoutine);  playerTurnRoutine  = null; }
+            if (stackWindowRoutine != null) { StopCoroutine(stackWindowRoutine); stackWindowRoutine = null; }
+
+            CardData card = cardView.cardData;
+            player.cards.Remove(card);
+            currentTableCard      = card;
+            deckManager.firstCard = card;
+
+            soundManager.PlaySoundclipOneShot(soundManager.CardClip, audioSource);
+            CardMover mover = cardView.GetComponent<CardMover>();
+            mover.MoveToWorld(deckManager.tableCardPoint);
+            cardView.transform.SetParent(deckManager.tableCardPoint);
+
+            Debug.Log($"{player.name} stacked {card.name}!");
+
+            if (card.type == CardType.Draw2)
+            {
+                if (!player.isBot)
+                    OpenTwoColorPicker(card.color, card.secondColor);
+                else
+                {
+                    CardColor chosen = Random.value > 0.5f ? card.color : card.secondColor;
+                    currentTableCard.color = chosen;
+                    SetColorIndicatorForMode(chosen);
+                }
+            }
+            else if (card.type == CardType.WildDraw4)
+            {
+                if (!player.isBot)
+                    OpenColorPicker();
+                else
+                {
+                    CardColor chosen = GetRandomColor();
+                    currentTableCard.color = chosen;
+                    SetColorIndicatorForMode(chosen);
+                }
+            }
+
+            GameManager.instance.CheckWin(player);
+
+            OnPlayerStacked(player, card.type == CardType.Draw2 ? 2 : 4);
+
+            if (!player.isBot)
+                playerPlayed = true;
+
+            return;
+        }
+
         if (isMyTurn)
         {
-            // Block if already played this turn
             if (playerPlayed) return;
 
             if (!IsCardPlayable(cardView.cardData))
             {
                 if (!easyMode)
                 {
-                    Debug.Log("Invalid card! Player draws 1 penalty card (Hard mode).");
+                    Debug.Log("Invalid card! Player draws 1 penalty card.");
                     deckManager.DrawCardForPlayer(player);
                 }
                 return;
@@ -254,18 +408,10 @@ jumpInHappened = false;
 
             PlayPlayerCard(player, cardView);
         }
-        else if (CanJumpIn(cardView.cardData))
+        else if (!easyMode && CanJumpIn(cardView.cardData))
         {
-            if (currentBotRoutine != null)
-            {
-                StopCoroutine(currentBotRoutine);
-                currentBotRoutine = null;
-            }
-            if (playerTurnRoutine != null)
-            {
-                StopCoroutine(playerTurnRoutine);
-                playerTurnRoutine = null;
-            }
+            if (currentBotRoutine  != null) { StopCoroutine(currentBotRoutine);  currentBotRoutine  = null; }
+            if (playerTurnRoutine  != null) { StopCoroutine(playerTurnRoutine);  playerTurnRoutine  = null; }
 
             PlayAnyCard(player, cardView);
             playerPlayed = true;
@@ -303,7 +449,7 @@ jumpInHappened = false;
             return;
         }
 
-        ApplyCardEffects(card, isBot: false);
+        ApplyCardEffects(card, isBot: false, player: player);
 
         ResetCardHints(player);
         playerPlayed = true;
@@ -312,13 +458,12 @@ jumpInHappened = false;
         ScheduleBotJumpInCheck();
     }
 
-    void ApplyCardEffects(CardData card, bool isBot)
+    void ApplyCardEffects(CardData card, bool isBot, PlayerBase player)
     {
         switch (card.type)
         {
             case CardType.Skip:
                 skipNextTurn = true;
-                Debug.Log("Skip — next player skipped.");
                 break;
 
             case CardType.Reverse:
@@ -327,59 +472,65 @@ jumpInHappened = false;
                     skipNextTurn = true;
                 break;
 
-           case CardType.Draw2:
-{
-    int nextIdx = WrapIndex(currentPlayerIndex + turnDirection);
-    PlayerBase next = players[nextIdx];
+            case CardType.Draw2:
+            {
+                int addedCards  = 2;
+                int playerIndex = players.IndexOf(player);
+                int targetIndex = WrapIndex(playerIndex + turnDirection);
 
-    deckManager.DrawCardForPlayer(next);
-    deckManager.DrawCardForPlayer(next);
+                if (isBot)
+                {
+                    CardColor chosen = Random.value > 0.5f ? card.color : card.secondColor;
+                    currentTableCard.color = chosen;
+                    card.color = chosen;  
+                    SetColorIndicatorForMode(chosen);
+                    ShowColorPopup(chosen);
+                }
+                else
+                {
+                    OpenTwoColorPicker(card.color, card.secondColor);
+                }
 
-    Debug.Log($"{next.name} drew 2 cards.");
-
-    if (players.Count == 2)
-    {
-        // 👇 أهم سطر
-        currentPlayerIndex = nextIdx;
-    }
-    else
-    {
-        skipNextTurn = true;
-    }
-
-    if (isBot)
-    {
-        CardColor chosen = Random.value > 0.5f ? card.color : card.secondColor;
-        currentTableCard.color = chosen;
-        SetColorIndicatorForMode(chosen);
-    }
-    else
-    {
-        OpenTwoColorPicker(card.color, card.secondColor);
-    }
-
-    break;
-}
+                if (!easyMode && inStackWindow)
+                    OnPlayerStacked(player, addedCards);
+                else
+                    OpenStackWindow(targetIndex, addedCards); 
+                break;
+            }
 
             case CardType.Wild:
                 if (isBot)
                 {
                     CardColor newColor = GetRandomColor();
                     currentTableCard.color = newColor;
+                    card.color = newColor;
                     SetColorIndicatorForMode(newColor);
+                    ShowColorPopup(newColor);
                     Debug.Log("Bot Wild → " + newColor);
                 }
                 break;
 
             case CardType.WildDraw4:
-                StartCoroutine(HandleDraw4(currentPlayerIndex));
+            {
+                int addedCards  = 4;
+                int playerIndex = players.IndexOf(player);
+                int targetIndex = WrapIndex(playerIndex + turnDirection);
+
                 if (isBot)
                 {
                     CardColor randomColor = GetRandomColor();
                     currentTableCard.color = randomColor;
+                    card.color = randomColor;  
                     SetColorIndicatorForMode(randomColor);
+                    ShowColorPopup(randomColor);
+
+                    if (!easyMode && inStackWindow)
+                        OnPlayerStacked(player, addedCards);
+                    else
+                        OpenStackWindow(targetIndex, addedCards);
                 }
                 break;
+            }
         }
     }
 
@@ -401,7 +552,6 @@ jumpInHappened = false;
         blueButton.SetActive(false);
         greenButton.SetActive(false);
         yellowButton.SetActive(false);
-
         EnableColorButton(color1);
         EnableColorButton(color2);
         colorPickerPanel.SetActive(true);
@@ -411,12 +561,18 @@ jumpInHappened = false;
     {
         currentTableCard.color = color;
         colorPickerPanel.SetActive(false);
-
         SetColorIndicatorForMode(color);
 
-     
         if (currentTableCard.type == CardType.WildDraw4)
-            StartCoroutine(HandleDraw4(currentPlayerIndex));
+        {
+            PlayerBase human   = players.Find(p => !p.isBot);
+            int humanIndex     = players.IndexOf(human);
+            int targetIndex    = WrapIndex(humanIndex + turnDirection);
+            if (!easyMode && inStackWindow)
+                OnPlayerStacked(human, 4);
+            else
+                OpenStackWindow(targetIndex, 4);
+        }
 
         StartCoroutine(DelayedReset(7f));
         playerPlayed = true;
@@ -425,18 +581,14 @@ jumpInHappened = false;
         ScheduleBotJumpInCheck();
     }
 
-
     void SetColorIndicatorForMode(CardColor color)
     {
         if (easyMode)
-        {
             currentColorImage.color = ColorFromCardColor(color);
-            ShowColorPopup(color);
-        }
         else
         {
             ShowColorPopup(color);
-           // currentColorImage.color = Color.clear;
+            currentColorImage.color = Color.clear;
         }
     }
 
@@ -464,10 +616,8 @@ jumpInHappened = false;
 
     void EnableAllColors()
     {
-        redButton.SetActive(true);
-        blueButton.SetActive(true);
-        greenButton.SetActive(true);
-        yellowButton.SetActive(true);
+        redButton.SetActive(true); blueButton.SetActive(true);
+        greenButton.SetActive(true); yellowButton.SetActive(true);
     }
 
     void EnableColorButton(CardColor color)
@@ -505,86 +655,51 @@ jumpInHappened = false;
     #endregion
 
     // ═════════════════════════════════════════════════════════════════
-    #region Draw4 Handler
-    // ═════════════════════════════════════════════════════════════════
-
- 
-    IEnumerator HandleDraw4(int snapshotIndex)
-    {
-        yield return new WaitForSeconds(0.1f);
-        int nextIdx     = WrapIndex(snapshotIndex + turnDirection);
-        PlayerBase next = players[nextIdx];
-
-        for (int i = 0; i < 4; i++)
-            deckManager.DrawCardForPlayer(next);
-
-        skipNextTurn = true;
-        Debug.Log($"{next.name} drew 4 cards (WD4) and is skipped.");
-    }
-
-    #endregion
-
-    // ═════════════════════════════════════════════════════════════════
-    #region Jump-In
+    #region Jump-In (number cards only)
     // ═════════════════════════════════════════════════════════════════
 
     bool CanJumpIn(CardData card)
     {
         if (easyMode) return false;
-
-        if (card.type == CardType.Draw2 || card.type == CardType.WildDraw4|| card.type == CardType.Wild)
-            return false;
+        if (card.type != CardType.Number) return false;
 
         CardData top = deckManager.firstCard;
         if (card.color != top.color) return false;
-
-        if (card.type == CardType.Number && top.type == CardType.Number)
-            return card.Number == top.Number;
-
-        return card.type == top.type && card.type != CardType.Number;
+        if (top.type != CardType.Number) return false;
+        return card.Number == top.Number;
     }
 
-  void PlayAnyCard(PlayerBase player, CardView cardView)
-{
-    CardData card = cardView.cardData;
+    void PlayAnyCard(PlayerBase player, CardView cardView)
+    {
+        CardData card = cardView.cardData;
 
-    player.cards.Remove(card);
-    currentTableCard      = card;
-    deckManager.firstCard = card;
-    cardView.Setup(card, true);
+        player.cards.Remove(card);
+        currentTableCard      = card;
+        deckManager.firstCard = card;
+        cardView.Setup(card, true);
 
-    CardMover mover = cardView.GetComponent<CardMover>();
-    mover.MoveToWorld(deckManager.tableCardPoint);
-    cardView.transform.SetParent(deckManager.tableCardPoint);
+        CardMover mover = cardView.GetComponent<CardMover>();
+        mover.MoveToWorld(deckManager.tableCardPoint);
+        cardView.transform.SetParent(deckManager.tableCardPoint);
 
-    Debug.Log(player.name + " Jump-In!");
+        Debug.Log(player.name + " Jump-In!");
 
-    int jumpIndex = players.IndexOf(player);
-    currentPlayerIndex = WrapIndex(jumpIndex + turnDirection);
+        int jumpIndex      = players.IndexOf(player);
+        currentPlayerIndex = WrapIndex(jumpIndex + turnDirection);
+        jumpInHappened     = true;
 
-    HandleJumpInCardEffects(card);
-    GameManager.instance.CheckWin(player);
+        HandleJumpInCardEffects(card);
+        GameManager.instance.CheckWin(player);
 
-    RestartTurnLoop();
-}
-
-void RestartTurnLoop()
-{
-    StopAllCoroutines();
-    isTurnLoopRunning = false;
-    StartCoroutine(TurnLoop());
-}
+        RestartTurnLoop();
+    }
 
     void HandleJumpInCardEffects(CardData card)
     {
         switch (card.type)
         {
-            case CardType.Skip:
-                skipNextTurn = true;
-                break;
-            case CardType.Reverse:
-                turnDirection *= -1;
-                break;
+            case CardType.Skip:    skipNextTurn   = true;  break;
+            case CardType.Reverse: turnDirection *= -1;    break;
         }
     }
 
@@ -605,12 +720,7 @@ void RestartTurnLoop()
                 CardView view = bot.GetCardView(card);
                 if (view != null)
                 {
-                    if (currentBotRoutine != null)
-                    {
-                        StopCoroutine(currentBotRoutine);
-                        currentBotRoutine = null;
-                    }
-
+                    if (currentBotRoutine != null) { StopCoroutine(currentBotRoutine); currentBotRoutine = null; }
                     Debug.Log(bot.name + " Jump-In!");
                     PlayAnyCard(bot, view);
                     return;
@@ -676,29 +786,26 @@ void RestartTurnLoop()
             UpdateClockColor(player, t);
             yield return null;
         }
-
         UpdateClockFill(player, 0f);
     }
 
     void UpdateClockFill(PlayerBase player, float t)
     {
-        if (player.turnTimerImage != null)
-            player.turnTimerImage.fillAmount = t;
+        if (player.turnTimerImage != null) player.turnTimerImage.fillAmount = t;
     }
 
     void UpdateClockColor(PlayerBase player, float t)
     {
         if (player.turnTimerImage == null) return;
         Color c = t > 0.5f
-            ? Color.Lerp(ClockYellow, ClockGreen,  (t - 0.5f) * 2f)
-            : Color.Lerp(ClockRed,    ClockYellow,  t * 2f);
+            ? Color.Lerp(ClockYellow, ClockGreen, (t - 0.5f) * 2f)
+            : Color.Lerp(ClockRed, ClockYellow, t * 2f);
         player.turnTimerImage.color = c;
     }
 
     void SetClockColor(PlayerBase player, Color c)
     {
-        if (player.turnTimerImage != null)
-            player.turnTimerImage.color = c;
+        if (player.turnTimerImage != null) player.turnTimerImage.color = c;
     }
 
     #endregion
@@ -756,6 +863,16 @@ void RestartTurnLoop()
     {
         int count = players.Count;
         return ((index % count) + count) % count;
+    }
+
+    bool IsIdenticalPlusCard(CardData candidate, CardData table)
+    {
+        if (candidate.type != table.type) return false;
+        if (candidate.type != CardType.Draw2 && candidate.type != CardType.WildDraw4) return false;
+        bool sameColors =
+            (candidate.color == table.color && candidate.secondColor == table.secondColor) ||
+            (candidate.color == table.secondColor && candidate.secondColor == table.color);
+        return sameColors;
     }
 
     public bool IsCardPlayable(CardData card)
